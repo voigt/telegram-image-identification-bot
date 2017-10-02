@@ -8,9 +8,8 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const s3 = new AWS.S3({apiVersion: '2006-03-01', region: 'eu-central-1'});
 const rekognition = new AWS.Rekognition({apiVersion: '2016-06-27', region: 'eu-west-1'});
 
-
 const downloadFileMiddleware = (ctx, next) => {
-  return bot.telegram.getFileLink(ctx.message.document) // message.document.file_id
+  return bot.telegram.getFileLink(ctx.message.document)
     .then((link) => {
       ctx.state.fileLink = link
       return next()
@@ -18,7 +17,8 @@ const downloadFileMiddleware = (ctx, next) => {
 }
 
 const downloadPhotoMiddleware = (ctx, next) => {
-  return bot.telegram.getFileLink(ctx.message.photo[0])
+  let photoCount = ctx.message.photo.length
+  return bot.telegram.getFileLink(ctx.message.photo[photoCount-1])
     .then((link) => {
       ctx.state.fileLink = link
       return next()
@@ -32,11 +32,23 @@ exports.handle = function(event, context, callback) {
     let fileUrl = ctx.state.fileLink;
     console.log('File url: ', fileUrl);
 
-    const s3Bucket = 'hannoverjs-image-bot-2017-09-28'
     const fileName = uuidv1() + '.jpg'
     const user = event.message.from.id
     const path = 'bot/' + user + '/'
     const key = path + fileName
+
+    let s3Params = {
+      Bucket: 'hannoverjs-image-bot-2017-09-28',
+      Key: key,
+      ContentType: '',
+      ContentLength: '',
+      Body: '' // buffer
+    }
+
+    let recognitionParams = {
+      MaxLabels: 15,
+      MinConfidence: 75
+    };
 
     const options = {
       url: fileUrl,
@@ -45,66 +57,49 @@ exports.handle = function(event, context, callback) {
     };
 
     request(options)
-    .then((res) => {
+      .then((res) => {
 
-      // console.log("Response headers/Length: " + res.headers['content-type'] + ' - ' + res.headers['content-length'])
-      // console.log("Res received:\n", JSON.stringify(res))
-      // ctx.reply('Yo got your pic! Its at \n!' + ctx.state.fileLink)
+        // console.log("Response headers/Length: " + res.headers['content-type'] + ' - ' + res.headers['content-length'])
+        // console.log("Res received:\n", JSON.stringify(res))
+        // ctx.reply('Yo got your pic! Its at \n!' + ctx.state.fileLink)
 
-      const s3Params = {
-        Bucket: s3Bucket,
-        Key: key,
-        ContentType: res.headers['content-type'],
-        ContentLength: res.headers['content-length'],
-        Body: res.body // buffer
-      }
+        s3Params.ContentType   = res.headers['content-type'],
+        s3Params.ContentLength = res.headers['content-length'],
+        s3Params.Body          = res.body // buffer
 
-      s3.putObject(s3Params).promise()
-        .then((data) => {
-          console.log('S3 Upload successful!');
-          ctx.reply('I uploaded your file to S3. Your welcome!')
+        console.log('res.body: ' + res.buffer)
+        console.log('s3Params.Body' + s3Params.Body)
 
-          const recognitionParams = {
-            Image: {
-              Bytes: new Buffer(s3Params.Body)
-                // S3Object: {
-                //   Bucket: s3Bucket,
-                //   Name: key
-                // }
-            },
-            MaxLabels: 15,
-            MinConfidence: 75
-          };
+        return s3.putObject(s3Params).promise()
+      })
+      .then((data) => {
+        console.log('S3 Upload successful! Data:');
+        console.log(data);
+        ctx.reply('I uploaded your file to S3. Your welcome!')
 
-          console.log('recognitionParams: ' + JSON.stringify(recognitionParams))
+        recognitionParams.Image = {
+            Bytes: new Buffer(s3Params.Body)
+        }
 
-          rekognition.detectLabels(recognitionParams).promise()
-            .then((data) => {
-              console.log('Recognition is happening');
-              console.log(JSON.stringify(data));
+        console.log('recognitionParams: ' + JSON.stringify(recognitionParams))
 
-              let labelNames = []
+        return rekognition.detectLabels(recognitionParams).promise()
+      })
+      .then((data) => {
+        console.log('Recognition is happening... Data:');
+        console.log(data);
 
-              data.Labels.map((label) => {
-                labelNames.push(label.Name)
-              })
+        let labelNames = []
 
-              ctx.reply("Things coming into my mind when I see this...\n" + labelNames.join(', ').replace(/,\s*$/, ""))
-            })
-            .catch((err) => {
-              console.log('Recognition makes trouble!' + err);
-              ctx.reply('Can not recognize anything! :/')
-            });
-
+        data.Labels.map((label) => {
+          labelNames.push(label.Name)
         })
-        .catch((err) => {
-          console.log(err);
-          ctx.reply('But S3 Upload failed :(')
-        });
 
-    })
-    .catch((err) => {
+        ctx.reply("Things coming into my mind when I see this...\n\n" + labelNames.join(', ').replace(/,\s*$/, ""))
+      })
+      .catch((err) => {
         console.log("Request did not work: " + err)
+        ctx.reply('Uh, something went wrong :(')
     });
   })
 
@@ -112,6 +107,11 @@ exports.handle = function(event, context, callback) {
     let fileUrl = ctx.state.fileLink;
     console.log('File url: ', fileUrl);
 
+    let recognitionParams = {
+      MaxLabels: 15,
+      MinConfidence: 75
+    };
+
     const options = {
       url: fileUrl,
       encoding: null,
@@ -119,53 +119,33 @@ exports.handle = function(event, context, callback) {
     };
 
     request(options)
-    .then((res) => {
+      .then((res) => {
+        console.log('Okay, got the result, starting rekognition:')
+        console.log(res)
 
-      // console.log("Response headers/Length: " + res.headers['content-type'] + ' - ' + res.headers['content-length'])
-      //console.log("Res received:\n", JSON.stringify(res))
-      // ctx.reply('Yo got your pic! Its at \n!' + ctx.state.fileLink)
+        recognitionParams.Image = {
+          Bytes: new Buffer(res.body)
+        }
 
-      const s3Params = {
-        ContentType: res.headers['content-type'],
-        ContentLength: res.headers['content-length'],
-        Body: res.body // buffer
-      }
+        console.log('recognitionParams: ' + JSON.stringify(recognitionParams))
 
-      const recognitionParams = {
-        Image: {
-          Bytes: new Buffer(JSON.stringify(s3Params.Body))
-            // S3Object: {
-            //   Bucket: s3Bucket,
-            //   Name: key
-            // }
-        },
-        MaxLabels: 15,
-        MinConfidence: 75
-      };
-      
-      console.log('recognitionParams: ' + JSON.stringify(recognitionParams))
+        return rekognition.detectLabels(recognitionParams).promise()
+      })
+      .then((data) => {
+        console.log('Recognition is happening... Data:');
+        console.log(data);
 
-      rekognition.detectLabels(recognitionParams).promise()
-        .then((data) => {
-          console.log('Recognition is happening');
-          console.log(JSON.stringify(data));
+        let labelNames = []
 
-          let labelNames = []
-
-          data.Labels.map((label) => {
-            labelNames.push(label.Name)
-          })
-
-          ctx.reply("Things coming into my mind when I see this...\n" + labelNames.join(', ').replace(/,\s*$/, ""))
+        data.Labels.map((label) => {
+          labelNames.push(label.Name)
         })
-        .catch((err) => {
-          console.log('Recognition makes trouble!' + err);
-          ctx.reply('Can not recognize anything! :/')
-        });
 
-    })
-    .catch((err) => {
+        ctx.reply("Things coming into my mind when I see this...\n\n" + labelNames.join(', ').replace(/,\s*$/, ""))
+      })
+      .catch((err) => {
         console.log("Request did not work: " + err)
+        ctx.reply('Uh, something went wrong :(')
     });
   })
 
