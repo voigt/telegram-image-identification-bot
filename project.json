@@ -1,0 +1,8 @@
+{
+  "name": "imageids",
+  "description": "Upload image and see whats in there.",
+  "memory": 512,
+  "timeout": 15,
+  "role": "arn:aws:iam::129858846384:role/imageids_lambda_function",
+  "environment": {}
+}
