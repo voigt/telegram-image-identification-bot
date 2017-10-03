@@ -1,0 +1,14 @@
+{
+  "name": "telegram-image-identification-bot",
+  "version": "0.1.0",
+  "description": "A telegram chatbot that tells you what it sees on your photos.",
+  "main": "index.js",
+  "dependencies": {
+    "request-promise-native": "^1.0.5",
+    "request": "^2.83.0",
+    "telegraf": "^3.12.1",
+    "uuid": "^3.1.0"
+  },
+  "author": "Christoph Voigt",
+  "license": "ISC"
+}
