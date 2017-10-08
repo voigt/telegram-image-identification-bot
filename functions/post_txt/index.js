@@ -30,17 +30,26 @@ const recognitionParams = {
   MinConfidence: 75
 };
 
+let labels = {
+  labelNames : [],
+  peopleCount : 0
+}
+
 const recognize = (data) => {
   console.log('Recognition is happening... Data:');
   console.log(data);
 
-  let labelNames = []
+  if (data.hasOwnProperty("labelNames")) {
+    return labels
+  } else {
+    console.log(JSON.stringify(data));
+    console.log("I see " + data.FaceDetails.length + " faces.")
+    labels.peopleCount = data.FaceDetails.length;
 
-  data.Labels.map((label) => {
-    labelNames.push(label.Name)
-  })
+    return labels
+  }
 
-  return labelNames
+  return labels
 };
 
 const requestHandler = function(event, context, callback) {
@@ -128,9 +137,39 @@ const requestHandler = function(event, context, callback) {
 
         return rekognition.detectLabels(recognitionParams).promise()
       })
+      // Detect Faces
+      .then((data) => {
+
+        labels.labelNames = [];
+        labels.peopleCount = 0;
+
+        data.Labels.map((label) => {
+          labels.labelNames.push(label.Name)
+        })
+
+        if (labels.labelNames.includes("People") || labels.labelNames.includes("Human")) {
+          console.log("Face Detection is happening!")
+      
+          const faceParams =  {
+            Image : { 
+              Bytes: recognitionParams.Image.Bytes
+            }
+          }
+      
+          return rekognition.detectFaces(faceParams).promise()
+        }
+
+        return labels
+      })
       .then(recognize)
-      .then((labelNames)=>{
-        ctx.reply("Things coming into my mind when I see this...\n\n" + labelNames.join(', ').replace(/,\s*$/, ""))
+      .then((labels) => {
+        console.log("Faces: " + labels.peopleCount)
+        if (labels.peopleCount > 0) {
+          ctx.reply("Things coming into my mind when I see this image of " + labels.peopleCount + " people...\n\n" + labels.labelNames.join(', ').replace(/,\s*$/, ""))
+
+        } else {
+          ctx.reply("Things coming into my mind when I see this image...\n\n" + labels.labelNames.join(', ').replace(/,\s*$/, ""))
+        }
       })
       .catch((err) => {
         console.log("Request did not work: " + err)
